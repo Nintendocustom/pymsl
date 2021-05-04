@@ -1,9 +1,6 @@
 language: python
 matrix:
   include:
-    - python: 3.4
-      dist: trusty
-      sudo: false
     - python: 3.5
       dist: trusty
       sudo: false
@@ -13,10 +10,13 @@ matrix:
     - python: 3.6
       dist: trusty
       sudo: false
-    - python: 3.6-dev
-      dist: trusty
-      sudo: false
     - python: 3.7
+      dist: xenial
+      sudo: true
+    - python: 3.8
+      dist: xenial
+      sudo: true
+    - python: 3.9
       dist: xenial
       sudo: true
 install:
