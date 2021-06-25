@@ -2,7 +2,7 @@
 
 import unittest
 
-from Cryptodome.PublicKey import RSA
+# from Cryptodome.PublicKey import RSA
 
 import pymsl
 from pymsl.exceptions import LicenseError, ManifestError, UserAuthDataError
@@ -20,7 +20,7 @@ class MslClientTests(unittest.TestCase):
         esn = 'NFCDIE-02-TDP0LTTSNSC3EHLL71FRYFOEEAZYQ3'
         drm_system = 'playready'
         profiles = ['ddplus-5.1-dash']
-        #keypair = RSA.generate(2048)
+        # keypair = RSA.generate(2048)
         message_id = 123456789
         languages = ['de-DE']
 
@@ -29,7 +29,7 @@ class MslClientTests(unittest.TestCase):
             esn=esn,
             drm_system=drm_system,
             profiles=profiles,
-            #keypair=keypair,
+            # keypair=keypair,
             message_id=message_id,
             languages=languages
         )
@@ -37,7 +37,7 @@ class MslClientTests(unittest.TestCase):
         self.assertEqual(esn, client.msl_session['esn'])
         self.assertEqual(drm_system, client.msl_session['drm_system'])
         self.assertEqual(profiles, client.msl_session['profiles'])
-        #self.assertEqual(keypair, client.msl_session['keypair'])
+        # self.assertEqual(keypair, client.msl_session['keypair'])
         self.assertEqual(message_id, client.msl_session['message_id'])
         self.assertEqual(languages, client.msl_session['languages'])
 

@@ -38,8 +38,8 @@ VALID_AUTH_SCHEMES = [
 ]
 
 DEFAULTS = {
-    #'esn': pymsl.utils.generate_esn('NFCDTS-01-'),
-     'esn': pymsl.utils.generate_esn('NFCDCH-02-'),
+    # 'esn': pymsl.utils.generate_esn('NFCDTS-01-'),
+    'esn': pymsl.utils.generate_esn('NFCDCH-02-'),
     'drm_system': 'widevine',
     'profiles': [
         'playready-h264mpl30-dash',
@@ -162,7 +162,7 @@ class MslClient(object):
         raise a ManifestError exception with the response
         from the MSL API as the body.
         """
-        if not 'session_keys' in self.msl_session:
+        if 'session_keys' not in  self.msl_session:
             raise ManifestError("You have to log in first")
         if not isinstance(viewable_id, int):
             raise TypeError('viewable_id must be of type int')
@@ -600,7 +600,6 @@ class MslClient(object):
     @staticmethod
     def __file_exists(path, file):
         return os.path.isfile(os.path.join(path, file))
-    
+
     def __repr__(self):
         return '<MslClient %s>' % self.msl_session['message_id']
-    
