@@ -95,8 +95,12 @@ class MslClient(object):
             'messageid': self.msl_session['message_id'],
             'keyrequestdata': [self.msl_session['key_request_data']]}
 
-    def login(self, path=None, rsa_key=None, msl_storage=None):
+    def login(self, path=None, rsa_key=None, msl_storage=None, cdm=None, cdm_session=None):
         """
+        :param cdm_session:
+        :type cdm_session:
+        :param cdm:
+        :type cdm:
         :param path: the path of the rsa key, msl_storage
         :type path: str
         :param rsa_key: filename of the rsa key
@@ -118,7 +122,8 @@ class MslClient(object):
                 self.load_rsa_keys(path, rsa_key)  # just imports the rsa key
                 self.msl_session['key_request_data']['keydata']['publickey'] = base64.b64encode(
                     self.msl_session['keypair'].publickey().exportKey('DER')).decode('utf8')
-                self.msl_session['session_keys'] = self.__parse_handshake(self.__perform_key_handshake())
+                self.msl_session['session_keys'] = self.__parse_handshake(self.__perform_key_handshake(), cdm,
+                                                                          cdm_session)
                 # self.save_rsa_keys(path, rsa_key)
                 self.save_msl_data(path, msl_storage)
                 return
@@ -130,7 +135,8 @@ class MslClient(object):
                 self.msl_session['key_request_data']['keydata']['publickey'] = base64.b64encode(
                     self.msl_session['keypair'].publickey().exportKey('DER')).decode('utf8')
                 self.save_rsa_keys(path, rsa_key)
-                self.msl_session['session_keys'] = self.__parse_handshake(self.__perform_key_handshake())
+                self.msl_session['session_keys'] = self.__parse_handshake(self.__perform_key_handshake(), cdm,
+                                                                          cdm_session)
                 self.save_msl_data(path, msl_storage)
                 return
 
@@ -140,11 +146,8 @@ class MslClient(object):
         self.msl_session["keypair"] = self.__generate_rsa_key()
         self.msl_session['key_request_data']['keydata']['publickey'] = base64.b64encode(
             self.msl_session['keypair'].publickey().exportKey('DER')).decode('utf8')
-        self.msl_session['session_keys'] = self.__parse_handshake(self.__perform_key_handshake())
-
-    def get_metadata(self, viewable_id, build):  # todo finish this, maybe without build
-        if self.msl_session["user_auth_data"].get("schem") != "NETFLIXID":
-            raise UserAuthDataError("%s doesn't work with get_metadata, you need NETFLIXID")
+        self.msl_session['session_keys'] = self.__parse_handshake(self.__perform_key_handshake(), cdm,
+                                                                  cdm_session)
 
     def load_manifest(self, viewable_id):
         """
@@ -162,7 +165,7 @@ class MslClient(object):
         raise a ManifestError exception with the response
         from the MSL API as the body.
         """
-        if 'session_keys' not in  self.msl_session:
+        if 'session_keys' not in self.msl_session:
             raise ManifestError("You have to log in first")
         if not isinstance(viewable_id, int):
             raise TypeError('viewable_id must be of type int')
@@ -225,8 +228,7 @@ class MslClient(object):
         except ValueError:
             manifest = self.__decrypt_msl_payload(resp.text)
             if manifest.get('result'):
-                self.msl_session['license_path'] = manifest[
-                    'result']['links']['license']['href']
+                self.msl_session['license_path'] = manifest['result']['links']['license']['href']
                 return manifest
             raise ManifestError(manifest)
         raise ManifestError(
@@ -292,13 +294,6 @@ class MslClient(object):
                 return msl_license_data
             raise LicenseError(msl_license_data)
         raise LicenseError(resp.text)
-
-    def get_profiles(self):
-        """
-        :return: returns the profils
-        This function returns the profiles used for the manifest request.
-        """
-        return self.msl_session["profiles"]
 
     def set_profiles(self, profiles):
         """
@@ -447,7 +442,7 @@ class MslClient(object):
         encrypted_key = self.msl_session["keypair"].exportKey()
         self.__save_file(path, filename, encrypted_key)
 
-    def __parse_handshake(self, response):
+    def __parse_handshake(self, response, cdm=None, cdm_session=None):
         """
         parse_handshake()
 
@@ -471,28 +466,37 @@ class MslClient(object):
             base64.b64decode(mastertoken['tokendata']).decode('utf8')
         )['sequencenumber']
 
-        encrypted_encryption_key = base64.b64decode(
-            headerdata['keyresponsedata']['keydata']['encryptionkey']
-        )
+        if headerdata["keyresponsedata"]["scheme"] == "WIDEVINE":
+            wv_response64 = headerdata['keyresponsedata']['keydata']['cdmkeyresponse']
+            encryptionkeyid = base64.standard_b64decode(headerdata['keyresponsedata']['keydata']["encryptionkeyid"])
+            cdm.provide_license(cdm_session, wv_response64)
+            keys = cdm.get_keys(cdm_session)
+            encryption_key = self.__find_wv_key(encryptionkeyid, keys, ["AllowEncrypt", "AllowDecrypt"])
+            sign_key = self.__find_wv_key(encryptionkeyid, keys, ["AllowSign", "AllowSignatureVerify"])
+        else:
 
-        encrypted_sign_key = base64.b64decode(
-            headerdata['keyresponsedata']['keydata']['hmackey']
-        )
+            encrypted_encryption_key = base64.b64decode(
+                headerdata['keyresponsedata']['keydata']['encryptionkey']
+            )
 
-        oaep_cipher = PKCS1_OAEP.new(self.msl_session['keypair'])
-        encryption_key_data = json.loads(
-            oaep_cipher.decrypt(encrypted_encryption_key).decode('utf8')
-        )
+            encrypted_sign_key = base64.b64decode(
+                headerdata['keyresponsedata']['keydata']['hmackey']
+            )
 
-        encryption_key = pymsl.utils.webcrypto_b64decode(
-            encryption_key_data['k']
-        )
+            oaep_cipher = PKCS1_OAEP.new(self.msl_session['keypair'])
+            encryption_key_data = json.loads(
+                oaep_cipher.decrypt(encrypted_encryption_key).decode('utf8')
+            )
 
-        sign_key_data = json.loads(
-            oaep_cipher.decrypt(encrypted_sign_key).decode('utf8')
-        )
+            encryption_key = pymsl.utils.webcrypto_b64decode(
+                encryption_key_data['k']
+            )
 
-        sign_key = pymsl.utils.webcrypto_b64decode(sign_key_data['k'])
+            sign_key_data = json.loads(
+                oaep_cipher.decrypt(encrypted_sign_key).decode('utf8')
+            )
+
+            sign_key = pymsl.utils.webcrypto_b64decode(sign_key_data['k'])
 
         return {
             'mastertoken': mastertoken,
@@ -500,6 +504,23 @@ class MslClient(object):
             'encryption_key': encryption_key,
             'sign_key': sign_key
         }
+
+    @staticmethod
+    def __find_wv_key(kid, keys, permissions):
+        for key in keys:
+            if key.kid != kid:
+                pass
+                # continue
+            if key.type != "OPERATOR_SESSION":
+                # self.logger.debug("wv key exchange: Wrong key type (not operator session) key %s" % key)
+                continue
+
+            if not set(permissions) <= set(key.permissions):
+                print("wv key exchange: Incorrect permissions, key %s, needed perms %s" % (key, permissions))
+                continue
+            return key.key
+
+        return None
 
     def __perform_key_handshake(self):
         """
@@ -519,21 +540,18 @@ class MslClient(object):
                     'identity': self.msl_session['esn'],
                 }
             },
-            'signature': ''}
-        header['headerdata'] = base64.b64encode(
-            pymsl.utils.dumps(self.header).encode('utf8')
-        ).decode('utf8')
+            'signature': '', 'headerdata': base64.b64encode(
+                pymsl.utils.dumps(self.header).encode('utf8')
+            ).decode('utf8')}
 
         payload = {
-            'signature': ''
-        }
-
-        payload['payload'] = base64.b64encode(pymsl.utils.dumps({
-            'sequencenumber': 1,
-            'messageid': self.msl_session['message_id'],
-            'endofmsg': True,
-            'data': ''
-        }).encode('utf8')).decode('utf8')
+            'signature': '',
+            'payload': base64.b64encode(pymsl.utils.dumps({
+                'sequencenumber': 1,
+                'messageid': self.msl_session['message_id'],
+                'endofmsg': True,
+                'data': ''
+            }).encode('utf8')).decode('utf8')}
 
         request = pymsl.utils.dumps(header) + pymsl.utils.dumps(payload)
         resp = requests.post(
